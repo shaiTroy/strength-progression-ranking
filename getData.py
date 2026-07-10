@@ -7,15 +7,13 @@ import json
 os.system('clear')
 
 def importData():
-    with open('openipf-2025-05-24-d228cac8.csv', mode='r') as file:
+    with open('openipf-2026-07-04-9acfa1cf.csv', mode='r') as file:
         reader = csv.reader(file)
         data = []
         for row in reader:
             currentRow = []
             if row[2] != 'SBD' or row[3] != 'Raw' or row[7] == 'Special Olympics' or row[30] == '': continue
-            if row[7] == 'Juniors': row[7] = 'Junior'
-            if row[7] == 'Sub-Juniors': row[7] = 'Sub-Junior'
-            for i in [0, 1, 36, 10, 11, 12, 14, 15, 16, 17, 19, 20, 21, 22, 24, 30]:
+            for i in [0, 1, 36, 14, 19, 24, 30]:
                     currentRow.append(row[i])
             data.append(currentRow)
         return data
@@ -23,19 +21,10 @@ def importData():
     # [0] = Name
     # [1] = Sex
     # [2] = Date
-    # [3] = Squat1
-    # [4] = Squat2
-    # [5] = Squat3
-    # [6] = Best Squat
-    # [7] = Bench1
-    # [8] = Bench2
-    # [9] = Bench3
-    # [10] = Best Bench
-    # [11] = Deadlift1
-    # [12] = Deadlift2
-    # [13] = Deadlift3
-    # [14] = Best Deadlift
-    # [15] = GL
+    # [3] = Best Squat
+    # [4] = Best Bench
+    # [5] = Best Deadlift
+    # [6] = GL
     
 def sortData(data):
     # Sort by date at index 4
@@ -45,121 +34,73 @@ def sortData(data):
     return data
 
 def updateDates(filtered):
-    
-    i = 0
-    n = len(filtered)
-    count_2_fail = 0
-    while i < len(filtered)-1:
-        count_incorrect = 0
-        for j in range(3, 16):
-            try:
-                filtered[i][j] = float(filtered[i][j])
-            except:
-                filtered.pop(i)
-                i -= 1
-                break
-            if filtered[i][j] == 0:
-                print(f"Found 0 attempt in {filtered[i]}")
-                filtered.pop(i)
-                i -= 1
-                break
-            elif filtered[i][j] < 0:
-                if count_incorrect == 1:
-                    filtered.pop(i)
-                    i -= 1
-                    count_2_fail += 1
-                    break
-                else:
-                    count_incorrect += 1        
-        i += 1
-    print(f"Filtered out {count_2_fail} entries with too many failed attempts")
-    print(f"Filtered out {n - len(filtered) - count_2_fail} entries with incorrect attempt, {len(filtered)} entries remaining.")
-    
-    
-    first_occurrence_date = None
-    current_name = None
-
+    new_list = []
+    fail_count = 0
     for entry in filtered:
-        name = entry[0]
-        date_str = entry[2]
-
-        try:
-            date_obj = datetime.strptime(date_str, "%Y-%m-%d")
-        except ValueError:
-            print(f"Skipping entry due to incorrect date format: {date_str}")
+        entry[3] = int(entry[3]) if entry[3].isdigit() else 0
+        entry[4] = int(entry[4]) if entry[4].isdigit() else 0
+        entry[5] = int(entry[5]) if entry[5].isdigit() else 0
+        if entry[3] == 0 or entry[4] == 0 or entry[5] == 0:
+            fail_count += 1
             continue
-        
-        if name != current_name:
-            current_name = name
-            first_occurrence_date = date_obj
-            entry[2] = 0
         else:
-            days_difference = (date_obj - first_occurrence_date).days
-            entry[2] = days_difference
-    i = 0
-    n = len(filtered)
-    while i < len(filtered)-1:
-        if filtered[i][2] == filtered[i+1][2]:
-            filtered.pop(i)
-        else:
-            i += 1 
-    if filtered[-1][2] == 0:
-        filtered.pop(-1)
-    print(f"Filtered out {n - len(filtered)} entries with the same lifter and date, {len(filtered)} entries remaining.")
+            entry[6] = float(entry[6]) if entry[6].replace('.', '', 1).isdigit() else 0.0
+            total = entry[3] + entry[4] + entry[5]
+            new_list.append([entry[0], entry[1], entry[2], total, entry[6]])
+    print(f"Filtered out {fail_count} entries with too many failed attempts")
+    print(f"Filtered out {len(filtered) - len(new_list)} entries with incorrect attempt, {len(new_list)} entries remaining.")   
     
-    return filtered
+    database = {} # name is key, value is: first total, first date, best total, last date, gl, sex, count
 
-def transform_and_save_arrays(filtered):
-    comps = []
-    cur_name = None
-    holder = []
-
-    for row in filtered:
-        if cur_name != row[0]:
-            cur_name = row[0]
-            holder = [row[1], row[2], float(row[15])]
+    for name, sex, date, total, gl in new_list:
+        if name not in database:
+            database[name] = [total, date, total, date, gl, sex, 0]
         else:
-            if holder[0] == 'M':
-                holder[0] = 1
-            else:
-                holder[0] = 0
-            holder[1] = (row[2] - holder[1])/30
-            holder.append((float(row[15]) - holder[2])/holder[1])
-            comps.append(holder)
-            holder = [row[1], row[2], float(row[15])]
-    
-    print(f"Number of entries: {len(comps)}")
-    
-    map = {}
-    for i in range(len(comps)):
-        key = int(comps[i][2])
-        gl_change = comps[i][3] 
-        if key in map:
-            map[key].append(gl_change)
-        else:
-            map[key] = [gl_change]
+            if total > database[name][2]:
+                database[name][2] = total
+                database[name][3] = date
+                database[name][4] = gl
+            elif total == database[name][2] and date > database[name][3]:
+                database[name][3] = date
+                database[name][4] = gl
+            database[name][6] += 1
             
-    keys = sorted(map.keys())
-    values = [sum(map[k]) / len(map[k]) for k in keys if map[k]]
+    database2 = {}
+    onecomp = 0
+    lessthan100 = 0
+    for lifter in database:
+        if database[lifter][6] > 0:
+            if database[lifter][4] >= 100:
+                database2[lifter] = database[lifter]
+            else:
+                lessthan100 += 1
+        else:
+            onecomp += 1
+    print(f"Filtered out {onecomp} entries with only one competition, {lessthan100} entries with less than 100 gl, {len(database2)} entries remaining.")
 
-    # Plotting
-    plt.figure(figsize=(12, 6))
-    plt.bar(keys, values, color='skyblue')
-    plt.xlabel('Key')
-    plt.ylabel('Count')
-    plt.title('Map Key Frequencies')
-    plt.xticks(rotation=90)  # Rotate x-labels if they overlap
-    plt.tight_layout()
-    plt.show()
-    
-    with open("gl_map.json", "w") as f:
-        json.dump(map, f)
-    
+    database3 = [] # name, diff in total, diff in dates, sex
+    less_than_3_years = 0
+    for lifter in database2:
+        diff_total = database2[lifter][2] - database2[lifter][0]
+        diff_dates = (datetime.strptime(database2[lifter][3], '%Y-%m-%d') - datetime.strptime(database2[lifter][1], '%Y-%m-%d')).days / 365.25
+        if diff_dates < 3:
+            less_than_3_years += 1
+            continue
+        database3.append([lifter, diff_total, diff_dates, database2[lifter][5]])
+    print(f"Filtered out {less_than_3_years} people with less than 3 years between first and latest competitions.")
+    print(f"Final dataset contains {len(database3)} people.")
+    return database3
+
+def save_arrays(filtered):
+    #save the arrays to files
+    with open('filtered_data.json', 'w') as f:
+        json.dump(filtered, f)
+        
     
 if __name__ == '__main__':
     data = sortData(importData())
     filtered = updateDates(data)
-    transform_and_save_arrays(filtered)
+    save_arrays(filtered)
     print("Data has been preprocessed and saved to files.")
     
     
